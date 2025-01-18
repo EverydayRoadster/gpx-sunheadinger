@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"time"
+	"slices"
 	"strconv"
+	"github.com/montanaflynn/stats"
 	"github.com/tkrajina/gpxgo/gpx"
 	"encoding/csv"
 )
@@ -123,20 +125,19 @@ func main(){
 	gpxFile,err := gpx.ParseBytes(payload)
 	check(err)
 
-	sunImpactDistributionTime := make([]float64, 360)
-	sunImpactDistribution := make([]int, 360)
-	deepSunImpactDistribution := make([]int, 360)
-
-	csvHeadings, err := os.Create(filename + ".csv")
-	check(err)
-	defer csvHeadings.Close()
-	csvHeadingsWriter := csv.NewWriter(csvHeadings)
-	defer csvHeadingsWriter.Flush()
-	csvHeadingsWriter.Write([]string{"GPX " + gpxFile.Version, "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
-
 	// for each track, segments inside track, all points inside each of the segments
 	for trackIndex, _ := range gpxFile.Tracks {
 		for segIndex, _ := range gpxFile.Tracks[trackIndex].Segments {
+
+			sunImpactDistributionTime := make([]float64, 360)
+			sunImpactDistribution := make([]float64, 360)
+			deepSunImpactDistribution := make([]float64, 360)
+
+			csvHeadings, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".csv")
+			check(err)
+			csvHeadingsWriter := csv.NewWriter(csvHeadings)
+			csvHeadingsWriter.Write([]string{"timestamp", "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
+
 			for pointIndex, _ := range gpxFile.Tracks[trackIndex].Segments[segIndex].Points {
 				if pointIndex > 0 {
 
@@ -170,7 +171,7 @@ func main(){
 						sunImpactDistributionTime[int(sunImpactAngle)] + gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
 					if (sunElevation >0 ) && (sunElevation <10){
 						deepSunImpactDistribution[int(sunImpactAngle)]++
-					}   
+					}
 
 					csvHeadingsWriter.Write([]string{
 						gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.String(), 
@@ -180,26 +181,44 @@ func main(){
 						strconv.FormatFloat(sunImpactAngle, 'f', 6, 64) } )
 				}
 			}
-			// TODO create export files for each track and segment
-			// normalize to 100 slices.Max()
-			// TODO print quartiles stats.Quartile() / stats.Quartiles()
-		}
+			csvHeadingsWriter.Flush()
+			csvHeadings.Close()
+
+
+			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
+			check(err)
+			csvSunImpactWriter := csv.NewWriter(csvSunImpact)
+			csvSunImpactWriter.Write([]string{"Impact Angle", "count", "normalized count", "timesum", "deep sun"})
+
+			// max, to normalize to 100 slices.Max()
+			maxSunImpactDistribution := slices.Max(sunImpactDistribution)
+
+			for carAngleIndex, _ := range sunImpactDistributionTime {
+				csvSunImpactWriter.Write([]string{
+					strconv.Itoa(carAngleIndex), 
+					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64), 
+					strconv.FormatFloat(sunImpactDistribution[carAngleIndex]*100/maxSunImpactDistribution, 'f', 2, 64), 
+					strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 0, 64),
+					strconv.FormatFloat(deepSunImpactDistribution[carAngleIndex], 'f', 2, 64) })
+			}
+			csvSunImpactWriter.Flush()
+			csvSunImpact.Close()
+
+			quartiles, err := stats.Quartile(sunImpactDistribution)
+			check(err)
+			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistribution)
+			check(err)
+			fmt.Println("Count Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
+			fmt.Println("InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
+
+			quartiles, err = stats.Quartile(sunImpactDistributionTime)
+			check(err)
+			interQuartileRange, err = stats.InterQuartileRange(sunImpactDistributionTime)
+			check(err)
+			fmt.Println(" Time Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
+			fmt.Println("InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
+
+		}	
 	}
-
-	csvSunImpact, err := os.Create(filename + ".sunimpact.csv")
-	check(err)
-	defer csvSunImpact.Close()
-	csvSunImpactWriter := csv.NewWriter(csvSunImpact)
-	defer csvSunImpactWriter.Flush()
-	csvSunImpactWriter.Write([]string{"Impact Angle", "count", "time", "deep"})
-
-	for carAngleIndex, _ := range sunImpactDistributionTime {
-		csvSunImpactWriter.Write([]string{
-			strconv.Itoa(carAngleIndex), 
-			strconv.Itoa(sunImpactDistribution[carAngleIndex]), 
-			strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 0, 64),
-			strconv.Itoa(deepSunImpactDistribution[carAngleIndex]) })
-	}
-
 
 }
