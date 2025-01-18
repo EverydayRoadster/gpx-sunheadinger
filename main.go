@@ -181,6 +181,8 @@ func main(){
 				}
 			}
 			// TODO create export files for each track and segment
+			// normalize to 100 slices.Max()
+			// TODO print quartiles stats.Quartile() / stats.Quartiles()
 		}
 	}
 
