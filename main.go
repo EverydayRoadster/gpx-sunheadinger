@@ -15,7 +15,7 @@ import (
 
 func usage() {
 	fmt.Println("Add heading into a GPX file based on location between track points.")
-	fmt.Println("Usage: go run . example.gpx ")
+	fmt.Println("Usage: go run . <example.gpx> [pause detection as duratio e.g. 10s (default)]")
 	os.Exit(0)
 }
 
@@ -110,14 +110,22 @@ func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azim
 }
 
 func main() {
-	if len(os.Args) < 1 {
+
+	if len(os.Args) < 2 {
 		usage()
 	}
+
+	pauseDetectSeconds := 10*time.Second
+	if len(os.Args) > 2 {
+		pauseDetectSeconds, _ = time.ParseDuration(os.Args[2])
+	}
+	fmt.Println("running with " + pauseDetectSeconds.String() + " pause detection")
 
 	// GPX input file
 	filename := os.Args[1]
 	payload, err := os.ReadFile(filename)
 	check(err)
+
 
 	// parse input from GPX format
 	gpxFile, err := gpx.ParseBytes(payload)
@@ -134,10 +142,15 @@ func main() {
 			csvHeadings, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".csv")
 			check(err)
 			csvHeadingsWriter := csv.NewWriter(csvHeadings)
-			csvHeadingsWriter.Write([]string{"timestamp", "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
+			csvHeadingsWriter.Write([]string{"timestamp", "timegap", "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
 
 			for pointIndex, _ := range gpxFile.Tracks[trackIndex].Segments[segIndex].Points {
 				if pointIndex > 0 {
+
+					timegap := gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp)
+					if timegap > pauseDetectSeconds {
+						continue
+					}
 
 					phi1 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Latitude)
 					lambda1 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Longitude)
@@ -145,6 +158,7 @@ func main() {
 					lambda2 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude)
 
 					deltaLambda := lambda2 - lambda1
+					// skip two dots on same location
 					if deltaLambda == 0 {
 						continue
 					}
@@ -176,6 +190,7 @@ func main() {
 
 					csvHeadingsWriter.Write([]string{
 						gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.String(),
+						timegap.String(),
 						strconv.FormatFloat(carHeading, 'f', 6, 64),
 						strconv.FormatFloat(sunAzimuth, 'f', 6, 64),
 						strconv.FormatFloat(sunElevation, 'f', 6, 64),
@@ -189,8 +204,8 @@ func main() {
 			check(err)
 			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistributionTime)
 			check(err)
-			fmt.Println("Timed Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
-			fmt.Println("TImed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
+//			fmt.Println("Timed Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
+			fmt.Println("Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
 
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
 			check(err)
