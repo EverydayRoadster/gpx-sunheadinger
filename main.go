@@ -1,15 +1,16 @@
 package main
 
 import (
-	"os"
+	"encoding/csv"
 	"fmt"
 	"math"
-	"time"
+	"os"
 	"slices"
 	"strconv"
+	"time"
+
 	"github.com/montanaflynn/stats"
 	"github.com/tkrajina/gpxgo/gpx"
-	"encoding/csv"
 )
 
 func usage() {
@@ -19,11 +20,10 @@ func usage() {
 }
 
 func check(e error) {
-    if e != nil {
-        panic(e)
-    }
+	if e != nil {
+		panic(e)
+	}
 }
-
 
 // Helper function to convert degrees to radians
 func degreesToRadians(degrees float64) float64 {
@@ -34,7 +34,6 @@ func degreesToRadians(degrees float64) float64 {
 func radiansToDegrees(radians float64) float64 {
 	return radians * 180 / math.Pi
 }
-
 
 // Calculate the Sun's position (azimuth and elevation) using Meeus formula
 func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azimuth, elevation float64) {
@@ -67,7 +66,7 @@ func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azim
 	sunTrueLong := geomMeanLongSun + sunEqOfCtr
 	sunAppLong := sunTrueLong - 0.00569 - 0.00478*math.Sin(degreesToRadians(125.04-1934.136*julianCentury))
 
-	meanObliqEcliptic := 23.0 + (26.0+((21.448-julianCentury*(46.815+julianCentury*(0.00059-julianCentury*0.001813))))/60.0)/60.0
+	meanObliqEcliptic := 23.0 + (26.0+(21.448-julianCentury*(46.815+julianCentury*(0.00059-julianCentury*0.001813)))/60.0)/60.0
 	obliqCorr := meanObliqEcliptic + 0.00256*math.Cos(degreesToRadians(125.04-1934.136*julianCentury))
 
 	// Declination of the Sun
@@ -75,10 +74,10 @@ func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azim
 
 	// Equation of time
 	varY := math.Tan(degreesToRadians(obliqCorr/2.0)) * math.Tan(degreesToRadians(obliqCorr/2.0))
-	eqOfTime := 4.0 * radiansToDegrees(varY*math.Sin(2.0*degreesToRadians(geomMeanLongSun)) -
-		2.0*eccentEarthOrbit*math.Sin(degreesToRadians(geomMeanAnomSun)) +
-		4.0*eccentEarthOrbit*varY*math.Sin(degreesToRadians(geomMeanAnomSun))*math.Cos(2.0*degreesToRadians(geomMeanLongSun)) -
-		0.5*varY*varY*math.Sin(4.0*degreesToRadians(geomMeanLongSun)) -
+	eqOfTime := 4.0 * radiansToDegrees(varY*math.Sin(2.0*degreesToRadians(geomMeanLongSun))-
+		2.0*eccentEarthOrbit*math.Sin(degreesToRadians(geomMeanAnomSun))+
+		4.0*eccentEarthOrbit*varY*math.Sin(degreesToRadians(geomMeanAnomSun))*math.Cos(2.0*degreesToRadians(geomMeanLongSun))-
+		0.5*varY*varY*math.Sin(4.0*degreesToRadians(geomMeanLongSun))-
 		1.25*eccentEarthOrbit*eccentEarthOrbit*math.Sin(2.0*degreesToRadians(geomMeanAnomSun)))
 
 	// Solar Noon
@@ -100,29 +99,28 @@ func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azim
 
 	// Solar azimuth angle
 	if hourAngle > 0 {
-		azimuth = math.Mod(radiansToDegrees(math.Acos(((math.Sin(degreesToRadians(latitude))*math.Cos(degreesToRadians(solarZenithAngle))) -
-			math.Sin(degreesToRadians(sunDeclination))) / (math.Cos(degreesToRadians(latitude)) * math.Sin(degreesToRadians(solarZenithAngle))))), 360.0)
+		azimuth = math.Mod(radiansToDegrees(math.Acos(((math.Sin(degreesToRadians(latitude))*math.Cos(degreesToRadians(solarZenithAngle)))-
+			math.Sin(degreesToRadians(sunDeclination)))/(math.Cos(degreesToRadians(latitude))*math.Sin(degreesToRadians(solarZenithAngle))))), 360.0)
 	} else {
-		azimuth = math.Mod(180.0-radiansToDegrees(math.Acos(((math.Sin(degreesToRadians(latitude))*math.Cos(degreesToRadians(solarZenithAngle))) -
-			math.Sin(degreesToRadians(sunDeclination))) / (math.Cos(degreesToRadians(latitude)) * math.Sin(degreesToRadians(solarZenithAngle)))))+180.0, 360.0)
+		azimuth = math.Mod(180.0-radiansToDegrees(math.Acos(((math.Sin(degreesToRadians(latitude))*math.Cos(degreesToRadians(solarZenithAngle)))-
+			math.Sin(degreesToRadians(sunDeclination)))/(math.Cos(degreesToRadians(latitude))*math.Sin(degreesToRadians(solarZenithAngle)))))+180.0, 360.0)
 	}
 
 	return azimuth, elevation
 }
 
-
-func main(){
+func main() {
 	if len(os.Args) < 1 {
 		usage()
 	}
 
 	// GPX input file
 	filename := os.Args[1]
-	payload,err := os.ReadFile(filename)
+	payload, err := os.ReadFile(filename)
 	check(err)
 
 	// parse input from GPX format
-	gpxFile,err := gpx.ParseBytes(payload)
+	gpxFile, err := gpx.ParseBytes(payload)
 	check(err)
 
 	// for each track, segments inside track, all points inside each of the segments
@@ -147,38 +145,41 @@ func main(){
 					lambda2 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude)
 
 					deltaLambda := lambda2 - lambda1
+					if deltaLambda == 0 {
+						continue
+					}
 
 					leftSide := math.Sin(deltaLambda) * math.Cos(phi2)
 					rightSide := (math.Cos(phi1) * math.Sin(phi2)) - (math.Sin(phi1) * math.Cos(phi2) * math.Cos(deltaLambda))
 					theta := math.Atan2(leftSide, rightSide)
 					carHeading := theta * 180 / math.Pi
 
-					if ( carHeading < 0 ){
+					if carHeading < 0 {
 						carHeading = 360 + carHeading
 					}
 
 					sunAzimuth, sunElevation := calculateSunPosition(phi2, lambda2, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp)
 					// poor orientation fix
-					sunAzimuth = sunAzimuth - (2*(sunAzimuth-180))
+					sunAzimuth = sunAzimuth - (2 * (sunAzimuth - 180))
 
 					sunImpactAngle := carHeading - sunAzimuth
-					if ( sunImpactAngle < 0 ){
+					if sunImpactAngle < 0 {
 						sunImpactAngle = 360 + sunImpactAngle
 					}
 
 					sunImpactDistribution[int(sunImpactAngle)]++
-					sunImpactDistributionTime[int(sunImpactAngle)] = 
+					sunImpactDistributionTime[int(sunImpactAngle)] =
 						sunImpactDistributionTime[int(sunImpactAngle)] + gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
-					if (sunElevation >0 ) && (sunElevation <10){
+					if (sunElevation > 0) && (sunElevation < 10) {
 						deepSunImpactDistribution[int(sunImpactAngle)]++
 					}
 
 					csvHeadingsWriter.Write([]string{
-						gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.String(), 
-						strconv.FormatFloat(carHeading, 'f', 6, 64), 
-						strconv.FormatFloat(sunAzimuth, 'f', 6, 64), 
-						strconv.FormatFloat(sunElevation, 'f', 6, 64), 
-						strconv.FormatFloat(sunImpactAngle, 'f', 6, 64) } )
+						gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.String(),
+						strconv.FormatFloat(carHeading, 'f', 6, 64),
+						strconv.FormatFloat(sunAzimuth, 'f', 6, 64),
+						strconv.FormatFloat(sunElevation, 'f', 6, 64),
+						strconv.FormatFloat(sunImpactAngle, 'f', 6, 64)})
 				}
 			}
 			csvHeadingsWriter.Flush()
@@ -201,19 +202,19 @@ func main(){
 
 			for carAngleIndex, _ := range sunImpactDistributionTime {
 				csvSunImpactWriter.Write([]string{
-					strconv.Itoa(carAngleIndex), 
-					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64), 
-					strconv.FormatFloat(sunImpactDistribution[carAngleIndex]*100/maxSunImpactDistribution, 'f', 2, 64), 
+					strconv.Itoa(carAngleIndex),
+					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64),
+					strconv.FormatFloat(sunImpactDistribution[carAngleIndex]*100/maxSunImpactDistribution, 'f', 2, 64),
 					strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 0, 64),
 					strconv.FormatFloat(deepSunImpactDistribution[carAngleIndex], 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q1, 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q2, 'f', 2, 64),
-					strconv.FormatFloat(quartiles.Q3, 'f', 2, 64) })
+					strconv.FormatFloat(quartiles.Q3, 'f', 2, 64)})
 			}
 			csvSunImpactWriter.Flush()
 			csvSunImpact.Close()
 
-		}	
+		}
 	}
 
 }
