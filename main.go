@@ -184,11 +184,17 @@ func main(){
 			csvHeadingsWriter.Flush()
 			csvHeadings.Close()
 
+			quartiles, err := stats.Quartile(sunImpactDistributionTime)
+			check(err)
+			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistributionTime)
+			check(err)
+			fmt.Println("Timed Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
+			fmt.Println("TImed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
 
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
 			check(err)
 			csvSunImpactWriter := csv.NewWriter(csvSunImpact)
-			csvSunImpactWriter.Write([]string{"Impact Angle", "count", "normalized count", "timesum", "deep sun"})
+			csvSunImpactWriter.Write([]string{"Impact Angle", "count", "normalized count", "timesum", "deep sun", "Q1 timed", "Q2 timed", "Q3 timed"})
 
 			// max, to normalize to 100 slices.Max()
 			maxSunImpactDistribution := slices.Max(sunImpactDistribution)
@@ -199,24 +205,13 @@ func main(){
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64), 
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex]*100/maxSunImpactDistribution, 'f', 2, 64), 
 					strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 0, 64),
-					strconv.FormatFloat(deepSunImpactDistribution[carAngleIndex], 'f', 2, 64) })
+					strconv.FormatFloat(deepSunImpactDistribution[carAngleIndex], 'f', 2, 64),
+					strconv.FormatFloat(quartiles.Q1, 'f', 2, 64),
+					strconv.FormatFloat(quartiles.Q2, 'f', 2, 64),
+					strconv.FormatFloat(quartiles.Q3, 'f', 2, 64) })
 			}
 			csvSunImpactWriter.Flush()
 			csvSunImpact.Close()
-
-			quartiles, err := stats.Quartile(sunImpactDistribution)
-			check(err)
-			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistribution)
-			check(err)
-			fmt.Println("Count Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
-			fmt.Println("InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
-
-			quartiles, err = stats.Quartile(sunImpactDistributionTime)
-			check(err)
-			interQuartileRange, err = stats.InterQuartileRange(sunImpactDistributionTime)
-			check(err)
-			fmt.Println(" Time Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
-			fmt.Println("InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
 
 		}	
 	}
