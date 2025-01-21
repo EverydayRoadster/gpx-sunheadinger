@@ -25,3 +25,5 @@ go.work.sum
 .env
 *.gpx
 *.csv
+.DS_Store
+.DS_Store
