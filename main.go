@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"time"
@@ -115,7 +116,7 @@ func main() {
 		usage()
 	}
 
-	pauseDetectSeconds := 10*time.Second
+	pauseDetectSeconds := 10 * time.Second
 	if len(os.Args) > 2 {
 		pauseDetectSeconds, _ = time.ParseDuration(os.Args[2])
 	}
@@ -125,7 +126,6 @@ func main() {
 	filename := os.Args[1]
 	payload, err := os.ReadFile(filename)
 	check(err)
-
 
 	// parse input from GPX format
 	gpxFile, err := gpx.ParseBytes(payload)
@@ -138,6 +138,8 @@ func main() {
 			sunImpactDistributionTime := make([]float64, 360)
 			sunImpactDistribution := make([]float64, 360)
 			deepSunImpactDistribution := make([]float64, 360)
+
+			filename = filename[0 : len(filename)-len(filepath.Ext(filename))]
 
 			csvHeadings, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".csv")
 			check(err)
@@ -204,7 +206,7 @@ func main() {
 			check(err)
 			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistributionTime)
 			check(err)
-//			fmt.Println("Timed Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
+			//			fmt.Println("Timed Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
 			fmt.Println("Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
 
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
