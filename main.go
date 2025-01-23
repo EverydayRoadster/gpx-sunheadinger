@@ -175,8 +175,10 @@ func main() {
 					}
 
 					sunAzimuth, sunElevation := calculateSunPosition(phi2, lambda2, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp)
-					// poor orientation fix
-					sunAzimuth = sunAzimuth - (2 * (sunAzimuth - 180))
+					// skip on a sun that is set
+					if sunElevation < 0 {
+						continue
+					}
 
 					sunImpactAngle := carHeading - sunAzimuth
 					if sunImpactAngle < 0 {
