@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/montanaflynn/stats"
+	"github.com/sixdouglas/suncalc"
 	"github.com/tkrajina/gpxgo/gpx"
 )
 
@@ -38,78 +39,8 @@ func radiansToDegrees(radians float64) float64 {
 
 // Calculate the Sun's position (azimuth and elevation) using Meeus formula
 func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azimuth, elevation float64) {
-	// Convert time to UTC and extract year, month, day, hour, minute, second
-	//	utc := dateTime.UTC()
-	// assuming time already UTC (according to GPX spec)
-	year, month, day := dateTime.Date()
-	hour, minute, second := dateTime.Clock()
-
-	// Julian Date
-	julianDay := float64((1461*(year+4800+(int(month)-14)/12))/4+
-		(367*(int(month)-2-12*((int(month)-14)/12)))/12-
-		(3*((year+4900+(int(month)-14)/12)/100))/4+
-		day-32075) +
-		(float64(hour)-12.0)/24.0 +
-		float64(minute)/1440.0 +
-		float64(second)/86400.0
-
-	// Julian Century
-	julianCentury := (julianDay - 2451545.0) / 36525.0
-
-	// Solar coordinates
-	geomMeanLongSun := math.Mod(280.46646+julianCentury*(36000.76983+julianCentury*0.0003032), 360.0)
-	geomMeanAnomSun := 357.52911 + julianCentury*(35999.05029-0.0001537*julianCentury)
-	eccentEarthOrbit := 0.016708634 - julianCentury*(0.000042037+0.0000001267*julianCentury)
-
-	sunEqOfCtr := math.Sin(degreesToRadians(geomMeanAnomSun))*(1.914602-julianCentury*(0.004817+0.000014*julianCentury)) +
-		math.Sin(degreesToRadians(2*geomMeanAnomSun))*(0.019993-0.000101*julianCentury) +
-		math.Sin(degreesToRadians(3*geomMeanAnomSun))*0.000289
-
-	sunTrueLong := geomMeanLongSun + sunEqOfCtr
-	sunAppLong := sunTrueLong - 0.00569 - 0.00478*math.Sin(degreesToRadians(125.04-1934.136*julianCentury))
-
-	meanObliqEcliptic := 23.0 + (26.0+(21.448-julianCentury*(46.815+julianCentury*(0.00059-julianCentury*0.001813)))/60.0)/60.0
-	obliqCorr := meanObliqEcliptic + 0.00256*math.Cos(degreesToRadians(125.04-1934.136*julianCentury))
-
-	// Declination of the Sun
-	sunDeclination := radiansToDegrees(math.Asin(math.Sin(degreesToRadians(obliqCorr)) * math.Sin(degreesToRadians(sunAppLong))))
-
-	// Equation of time
-	varY := math.Tan(degreesToRadians(obliqCorr/2.0)) * math.Tan(degreesToRadians(obliqCorr/2.0))
-	eqOfTime := 4.0 * radiansToDegrees(varY*math.Sin(2.0*degreesToRadians(geomMeanLongSun))-
-		2.0*eccentEarthOrbit*math.Sin(degreesToRadians(geomMeanAnomSun))+
-		4.0*eccentEarthOrbit*varY*math.Sin(degreesToRadians(geomMeanAnomSun))*math.Cos(2.0*degreesToRadians(geomMeanLongSun))-
-		0.5*varY*varY*math.Sin(4.0*degreesToRadians(geomMeanLongSun))-
-		1.25*eccentEarthOrbit*eccentEarthOrbit*math.Sin(2.0*degreesToRadians(geomMeanAnomSun)))
-
-	// Solar Noon
-	//	timeOffset := eqOfTime - 4.0*longitude + 60.0*float64(utc.Hour())/60.0
-	timeOffset := eqOfTime - 4.0*longitude + 60.0*float64(dateTime.Hour())/60.0
-	trueSolarTime := float64((hour*60 + minute)) + timeOffset
-
-	// Hour angle
-	hourAngle := trueSolarTime/4.0 - 180.0
-	if hourAngle < -180 {
-		hourAngle += 360.0
-	}
-
-	// Solar zenith angle
-	solarZenithAngle := radiansToDegrees(math.Acos(math.Sin(degreesToRadians(latitude))*math.Sin(degreesToRadians(sunDeclination)) +
-		math.Cos(degreesToRadians(latitude))*math.Cos(degreesToRadians(sunDeclination))*math.Cos(degreesToRadians(hourAngle))))
-
-	// Solar elevation angle
-	elevation = 90.0 - solarZenithAngle
-
-	// Solar azimuth angle
-	if hourAngle > 0 {
-		azimuth = math.Mod(radiansToDegrees(math.Acos(((math.Sin(degreesToRadians(latitude))*math.Cos(degreesToRadians(solarZenithAngle)))-
-			math.Sin(degreesToRadians(sunDeclination)))/(math.Cos(degreesToRadians(latitude))*math.Sin(degreesToRadians(solarZenithAngle))))), 360.0)
-	} else {
-		azimuth = math.Mod(180.0-radiansToDegrees(math.Acos(((math.Sin(degreesToRadians(latitude))*math.Cos(degreesToRadians(solarZenithAngle)))-
-			math.Sin(degreesToRadians(sunDeclination)))/(math.Cos(degreesToRadians(latitude))*math.Sin(degreesToRadians(solarZenithAngle)))))+180.0, 360.0)
-	}
-
-	return azimuth, elevation
+	sunPosition := suncalc.GetPosition(dateTime, latitude, longitude)
+	return radiansToDegrees(sunPosition.Azimuth), radiansToDegrees(sunPosition.Altitude)
 }
 
 func main() {
@@ -146,7 +77,7 @@ func main() {
 			csvHeadings, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".csv")
 			check(err)
 			csvHeadingsWriter := csv.NewWriter(csvHeadings)
-			csvHeadingsWriter.Write([]string{"timestamp", "timegap", "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
+			csvHeadingsWriter.Write([]string{"timestamp", "timegap", "lat", "lon", "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
 
 			for pointIndex, _ := range gpxFile.Tracks[trackIndex].Segments[segIndex].Points {
 				if pointIndex > 0 {
@@ -176,13 +107,15 @@ func main() {
 						carHeading = 360 + carHeading
 					}
 
-					sunAzimuth, sunElevation := calculateSunPosition(phi2, lambda2, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp)
+					sunAzimuth, sunElevation := calculateSunPosition(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp)
 					// skip on a sun that is set
 					if sunElevation < 0 {
 						continue
 					}
-
-					sunImpactAngle := carHeading - sunAzimuth
+					if sunAzimuth < 0 {
+						sunAzimuth = 360 + sunAzimuth
+					}
+					sunImpactAngle := math.Mod(carHeading-sunAzimuth, 360)
 					if sunImpactAngle < 0 {
 						sunImpactAngle = 360 + sunImpactAngle
 					}
@@ -197,6 +130,8 @@ func main() {
 					csvHeadingsWriter.Write([]string{
 						gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.String(),
 						timegap.String(),
+						strconv.FormatFloat(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude, 'f', 6, 64),
+						strconv.FormatFloat(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude, 'f', 6, 64),
 						strconv.FormatFloat(carHeading, 'f', 6, 64),
 						strconv.FormatFloat(sunAzimuth, 'f', 6, 64),
 						strconv.FormatFloat(sunElevation, 'f', 6, 64),
