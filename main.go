@@ -49,11 +49,11 @@ func main() {
 		usage()
 	}
 
-	pauseDetectSeconds := 10 * time.Second
+	pauseDetectDuration, _ := time.ParseDuration("10s")
 	if len(os.Args) > 2 {
-		pauseDetectSeconds, _ = time.ParseDuration(os.Args[2])
+		pauseDetectDuration, _ = time.ParseDuration(os.Args[2])
 	}
-	fmt.Println("running with " + pauseDetectSeconds.String() + " pause detection")
+	fmt.Println("running with " + pauseDetectDuration.String() + " pause detection")
 
 	// GPX input file
 	filename := os.Args[1]
@@ -65,8 +65,8 @@ func main() {
 	check(err)
 
 	// for each track, segments inside track, all points inside each of the segments
-	for trackIndex, _ := range gpxFile.Tracks {
-		for segIndex, _ := range gpxFile.Tracks[trackIndex].Segments {
+	for trackIndex := range gpxFile.Tracks {
+		for segIndex := range gpxFile.Tracks[trackIndex].Segments {
 
 			sunImpactDistributionTime := make([]float64, 360)
 			sunImpactDistribution := make([]float64, 360)
@@ -79,11 +79,11 @@ func main() {
 			csvHeadingsWriter := csv.NewWriter(csvHeadings)
 			csvHeadingsWriter.Write([]string{"timestamp", "timegap", "lat", "lon", "carHeading", "sunAzimuth", "sunElevation", "sunImpactAngle"})
 
-			for pointIndex, _ := range gpxFile.Tracks[trackIndex].Segments[segIndex].Points {
+			for pointIndex := range gpxFile.Tracks[trackIndex].Segments[segIndex].Points {
 				if pointIndex > 0 {
 
 					timegap := gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp)
-					if timegap > pauseDetectSeconds {
+					if timegap > pauseDetectDuration {
 						continue
 					}
 
@@ -156,7 +156,7 @@ func main() {
 			// max, to normalize to 100 slices.Max()
 			maxSunImpactDistribution := slices.Max(sunImpactDistribution)
 
-			for carAngleIndex, _ := range sunImpactDistributionTime {
+			for carAngleIndex := range sunImpactDistributionTime {
 				csvSunImpactWriter.Write([]string{
 					strconv.Itoa(carAngleIndex),
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64),
