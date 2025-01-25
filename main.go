@@ -112,10 +112,18 @@ func main() {
 					if sunElevation < 0 {
 						continue
 					}
+					// orientation fix for hemisphere
+					if gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude > 0 {
+						sunAzimuth += 180
+					}
+					// be in boundary
+					sunAzimuth = math.Mod(sunAzimuth, 360)
+					// be positiv
 					if sunAzimuth < 0 {
 						sunAzimuth = 360 + sunAzimuth
 					}
-					sunImpactAngle := math.Mod(carHeading-sunAzimuth, 360)
+
+					sunImpactAngle := math.Mod(sunAzimuth-carHeading, 360)
 					if sunImpactAngle < 0 {
 						sunImpactAngle = 360 + sunImpactAngle
 					}
