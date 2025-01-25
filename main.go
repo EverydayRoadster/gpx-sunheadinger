@@ -72,8 +72,10 @@ func main() {
 			sunImpactDistribution := make([]float64, 360)
 			deepSunImpactDistribution := make([]float64, 360)
 
+			// align filename with name from input file
 			filename = filename[0 : len(filename)-len(filepath.Ext(filename))]
 
+			// create csv files for each GPX segment
 			csvHeadings, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".csv")
 			check(err)
 			csvHeadingsWriter := csv.NewWriter(csvHeadings)
@@ -81,19 +83,21 @@ func main() {
 
 			for pointIndex := range gpxFile.Tracks[trackIndex].Segments[segIndex].Points {
 				if pointIndex > 0 {
-
+					// check time gap between two subsequent track points
 					timegap := gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp)
+					// on gap being larger than threshold, ignore this value (pause detection)
 					if timegap > pauseDetectDuration {
 						continue
 					}
-
+					// inputs for calculating the angle between two subsequent track points (car direction)
 					phi1 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Latitude)
 					lambda1 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Longitude)
 					phi2 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude)
 					lambda2 := degreesToRadians(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude)
 
 					deltaLambda := lambda2 - lambda1
-					// skip two dots on same location
+					// skip two dots on same location: no movement, not computable
+					// TODO: check for rare case of move along Latitude only, what is done then? Some GPX loggers are poor on resolution....
 					if deltaLambda == 0 {
 						continue
 					}
@@ -101,8 +105,11 @@ func main() {
 					leftSide := math.Sin(deltaLambda) * math.Cos(phi2)
 					rightSide := (math.Cos(phi1) * math.Sin(phi2)) - (math.Sin(phi1) * math.Cos(phi2) * math.Cos(deltaLambda))
 					theta := math.Atan2(leftSide, rightSide)
+					// car direction
 					carHeading := theta * 180 / math.Pi
 
+					// normalize to 360°
+					carHeading = math.Mod(carHeading, 360)
 					if carHeading < 0 {
 						carHeading = 360 + carHeading
 					}
@@ -116,18 +123,19 @@ func main() {
 					if gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude > 0 {
 						sunAzimuth += 180
 					}
-					// be in boundary
+					// normalize to 360°
 					sunAzimuth = math.Mod(sunAzimuth, 360)
-					// be positiv
 					if sunAzimuth < 0 {
 						sunAzimuth = 360 + sunAzimuth
 					}
-
+					// calc sun impact relative to direction of car
 					sunImpactAngle := math.Mod(sunAzimuth-carHeading, 360)
+					// normalize to 360°
 					if sunImpactAngle < 0 {
 						sunImpactAngle = 360 + sunImpactAngle
 					}
 
+					// collect a value into a stack per degree of sun impact to car direction
 					sunImpactDistribution[int(sunImpactAngle)]++
 					sunImpactDistributionTime[int(sunImpactAngle)] =
 						sunImpactDistributionTime[int(sunImpactAngle)] + gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
@@ -135,6 +143,7 @@ func main() {
 						deepSunImpactDistribution[int(sunImpactAngle)]++
 					}
 
+					// write raw stuff
 					csvHeadingsWriter.Write([]string{
 						gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.String(),
 						timegap.String(),
@@ -149,13 +158,14 @@ func main() {
 			csvHeadingsWriter.Flush()
 			csvHeadings.Close()
 
+			// compute quartiles
 			quartiles, err := stats.Quartile(sunImpactDistributionTime)
 			check(err)
 			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistributionTime)
 			check(err)
-			//			fmt.Println("Timed Quartiles Q1: " + strconv.FormatFloat(quartiles.Q1, 'f', 0, 64) + ", Q2: " + strconv.FormatFloat(quartiles.Q2, 'f', 0, 64) + ", Q3: " + strconv.FormatFloat(quartiles.Q3, 'f', 0, 64))
-			fmt.Println("Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
+			fmt.Println("Track: " + strconv.Itoa(trackIndex) + " Segment: " + strconv.Itoa(segIndex) + " Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
 
+			// write collected data stuff
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
 			check(err)
 			csvSunImpactWriter := csv.NewWriter(csvSunImpact)
@@ -163,7 +173,6 @@ func main() {
 
 			// max, to normalize to 100 slices.Max()
 			maxSunImpactDistribution := slices.Max(sunImpactDistribution)
-
 			for carAngleIndex := range sunImpactDistributionTime {
 				csvSunImpactWriter.Write([]string{
 					strconv.Itoa(carAngleIndex),
@@ -177,7 +186,6 @@ func main() {
 			}
 			csvSunImpactWriter.Flush()
 			csvSunImpact.Close()
-
 		}
 	}
 
