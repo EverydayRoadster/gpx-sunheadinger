@@ -51,6 +51,7 @@ const (
 	SunRising
 	SunBlinding
 	SunUp
+	Unknown
 )
 
 var currentSunState SunState
@@ -67,8 +68,21 @@ func (sunState SunState) hasChanged(newSunState SunState) bool {
 	return true
 }
 
-func main() {
+func nextTrack(trackIndex int, gpxFile *gpx.GPX) *gpx.GPXTrack {
+	gpxTrack := &gpx.GPXTrack{
+		Name: gpxFile.Tracks[trackIndex].Name + " " + strconv.Itoa(trackIndex),
+	}
+	gpxTrack.Number.SetValue(trackIndex)
+	return gpxTrack
+}
 
+func nextSegment(previousPoint *gpx.GPXPoint) *gpx.GPXTrackSegment {
+	gpxSegment := new(gpx.GPXTrackSegment)
+	gpxSegment.AppendPoint(previousPoint)
+	return gpxSegment
+}
+
+func main() {
 	if len(os.Args) < 2 {
 		usage()
 	}
@@ -87,23 +101,26 @@ func main() {
 	// parse input from GPX format
 	gpxFile, err := gpx.ParseBytes(payload)
 	check(err)
+
 	// GPX output file
-	gpxOutput := new(gpx.GPX)
+	gpxOutput := &gpx.GPX{
+		Name:             gpxFile.Name,
+		Time:             gpxFile.Time,
+		Creator:          "EverydayRoadster gpx-sunheadinger",
+		AuthorName:       gpxFile.AuthorName,
+		AuthorEmail:      gpxFile.AuthorEmail,
+		Copyright:        gpxFile.Copyright,
+		CopyrightLicense: gpxFile.CopyrightLicense,
+	}
 	gpxOutput.RegisterNamespace("gpxx", "http://www.garmin.com/xmlschemas/GpxExtensions/v3")
-	gpxOutput.Creator = "EverydayRoadster gpx-sunheadinger"
-	currentSunState.hasChanged(SunDowned)
+	currentSunState.hasChanged(Unknown)
 
 	// for each track, segments inside track, all points inside each of the segments
 	for trackIndex := range gpxFile.Tracks {
-		gpxTrack := new(gpx.GPXTrack)
-		gpxTrack.Name = strconv.Itoa(trackIndex)
-		gpxTrack.Number.SetValue(trackIndex)
-		gpxOutput.AppendTrack(gpxTrack)
+		gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile))
 
 		for segIndex := range gpxFile.Tracks[trackIndex].Segments {
-			gpxSegment := new(gpx.GPXTrackSegment)
-			gpxOutput.AppendSegment(gpxSegment)
-
+			// initialize data buckets
 			sunImpactDistributionTime := make([]float64, 360)
 			sunImpactDistribution := make([]float64, 360)
 			deepSunImpactDistribution := make([]float64, 360)
@@ -154,7 +171,7 @@ func main() {
 					// a sun that is set
 					if sunElevation < 0 {
 						if currentSunState.hasChanged(SunDowned) {
-							gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+							gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 						}
 						gpxOutput.AppendPoint(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex])
 						continue
@@ -180,19 +197,19 @@ func main() {
 					sunImpactDistributionTime[int(sunImpactAngle)] =
 						sunImpactDistributionTime[int(sunImpactAngle)] + gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
 					if (sunElevation > 0) && (sunElevation < 15) {
-						if (carHeading < 30) || (carHeading > 330) {
+						if (sunImpactAngle < 30) || (sunImpactAngle > 330) {
 							if currentSunState.hasChanged(SunBlinding) {
-								gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+								gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						} else {
 							if currentSunState.hasChanged(SunRising) {
-								gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+								gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						}
 						deepSunImpactDistribution[int(sunImpactAngle)]++
 					} else {
 						if currentSunState.hasChanged(SunUp) {
-							gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+							gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 						}
 					}
 					gpxOutput.AppendPoint(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex])
