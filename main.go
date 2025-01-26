@@ -43,6 +43,30 @@ func calculateSunPosition(latitude, longitude float64, dateTime time.Time) (azim
 	return radiansToDegrees(sunPosition.Azimuth), radiansToDegrees(sunPosition.Altitude)
 }
 
+// Sun state management
+type SunState int
+
+const (
+	SunDowned = iota
+	SunRising
+	SunBlinding
+	SunUp
+)
+
+var currentSunState SunState
+
+func (sunState SunState) EnumIndex() int {
+	return int(sunState)
+}
+
+func (sunState SunState) hasChanged(newSunState SunState) bool {
+	if sunState.EnumIndex() == newSunState.EnumIndex() {
+		return false
+	}
+	currentSunState = newSunState
+	return true
+}
+
 func main() {
 
 	if len(os.Args) < 2 {
@@ -63,10 +87,22 @@ func main() {
 	// parse input from GPX format
 	gpxFile, err := gpx.ParseBytes(payload)
 	check(err)
+	// GPX output file
+	gpxOutput := new(gpx.GPX)
+	gpxOutput.RegisterNamespace("gpxx", "http://www.garmin.com/xmlschemas/GpxExtensions/v3")
+	gpxOutput.Creator = "EverydayRoadster gpx-sunheadinger"
+	currentSunState.hasChanged(SunDowned)
 
 	// for each track, segments inside track, all points inside each of the segments
 	for trackIndex := range gpxFile.Tracks {
+		gpxTrack := new(gpx.GPXTrack)
+		gpxTrack.Name = strconv.Itoa(trackIndex)
+		gpxTrack.Number.SetValue(trackIndex)
+		gpxOutput.AppendTrack(gpxTrack)
+
 		for segIndex := range gpxFile.Tracks[trackIndex].Segments {
+			gpxSegment := new(gpx.GPXTrackSegment)
+			gpxOutput.AppendSegment(gpxSegment)
 
 			sunImpactDistributionTime := make([]float64, 360)
 			sunImpactDistribution := make([]float64, 360)
@@ -115,8 +151,12 @@ func main() {
 					}
 
 					sunAzimuth, sunElevation := calculateSunPosition(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp)
-					// skip on a sun that is set
+					// a sun that is set
 					if sunElevation < 0 {
+						if currentSunState.hasChanged(SunDowned) {
+							gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+						}
+						gpxOutput.AppendPoint(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex])
 						continue
 					}
 					// orientation fix for hemisphere
@@ -139,9 +179,23 @@ func main() {
 					sunImpactDistribution[int(sunImpactAngle)]++
 					sunImpactDistributionTime[int(sunImpactAngle)] =
 						sunImpactDistributionTime[int(sunImpactAngle)] + gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
-					if (sunElevation > 0) && (sunElevation < 10) {
+					if (sunElevation > 0) && (sunElevation < 15) {
+						if (carHeading < 30) || (carHeading > 330) {
+							if currentSunState.hasChanged(SunBlinding) {
+								gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+							}
+						} else {
+							if currentSunState.hasChanged(SunRising) {
+								gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+							}
+						}
 						deepSunImpactDistribution[int(sunImpactAngle)]++
+					} else {
+						if currentSunState.hasChanged(SunUp) {
+							gpxOutput.AppendSegment(new(gpx.GPXTrackSegment))
+						}
 					}
+					gpxOutput.AppendPoint(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex])
 
 					// write raw stuff
 					csvHeadingsWriter.Write([]string{
@@ -178,7 +232,7 @@ func main() {
 					strconv.Itoa(carAngleIndex),
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64),
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex]*100/maxSunImpactDistribution, 'f', 2, 64),
-					strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 0, 64),
+					strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 2, 64),
 					strconv.FormatFloat(deepSunImpactDistribution[carAngleIndex], 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q1, 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q2, 'f', 2, 64),
@@ -188,5 +242,12 @@ func main() {
 			csvSunImpact.Close()
 		}
 	}
+	// create output GPX file
+	xmlBytes, err := gpxOutput.ToXml(gpx.ToXmlParams{Version: "1.1", Indent: true})
+	check(err)
+	// write GPX XML output
+	filename = filename[0 : len(filename)-len(filepath.Ext(filename))]
+	err = os.WriteFile(filename+".output.gpx", xmlBytes, 0666)
+	check(err)
 
 }
