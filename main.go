@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/csv"
+	"encoding/xml"
 	"fmt"
 	"math"
 	"os"
@@ -60,6 +61,20 @@ func (sunState SunState) EnumIndex() int {
 	return int(sunState)
 }
 
+func (sunState SunState) ToString() string {
+	switch sunState {
+	case SunDowned:
+		return "Sun Down"
+	case SunRising:
+		return "Sun Rising"
+	case SunBlinding:
+		return "Sun Blinding"
+	case SunUp:
+		return "Sun Up"
+	}
+	return "Unknown"
+}
+
 func (sunState SunState) hasChanged(newSunState SunState) bool {
 	if sunState.EnumIndex() == newSunState.EnumIndex() {
 		return false
@@ -68,11 +83,29 @@ func (sunState SunState) hasChanged(newSunState SunState) bool {
 	return true
 }
 
-func nextTrack(trackIndex int, gpxFile *gpx.GPX) *gpx.GPXTrack {
-	gpxTrack := &gpx.GPXTrack{
-		Name: gpxFile.Tracks[trackIndex].Name + " " + strconv.Itoa(trackIndex),
+func (sunState SunState) getColorExtension() *gpx.ExtensionNode {
+	colorExtension := &gpx.ExtensionNode{
+		XMLName: xml.Name{Space: "http://www.garmin.com/xmlschemas/GpxExtensions/v3", Local: "DisplayColor"},
+		Data:    "Red",
 	}
+	extensionNode := &gpx.ExtensionNode{
+		XMLName: xml.Name{Space: "http://www.garmin.com/xmlschemas/GpxExtensions/v3", Local: "TrackExtension"},
+		Data:    "\n                \n            ",
+	}
+	extensionNode.Nodes = append(extensionNode.Nodes, *colorExtension)
+	return extensionNode
+}
+
+func nextTrack(trackIndex int, gpxFile *gpx.GPX, previousPoint *gpx.GPXPoint) *gpx.GPXTrack {
+	gpxTrack := &gpx.GPXTrack{
+		Name: gpxFile.Tracks[trackIndex].Name + " " + strconv.Itoa(trackIndex) + " " + currentSunState.ToString(),
+	}
+
+	gpxTrack.Extensions.Nodes = append(gpxTrack.Extensions.Nodes, *currentSunState.getColorExtension())
 	gpxTrack.Number.SetValue(trackIndex)
+	if previousPoint != nil {
+		gpxTrack.AppendSegment(nextSegment(previousPoint))
+	}
 	return gpxTrack
 }
 
@@ -117,7 +150,7 @@ func main() {
 
 	// for each track, segments inside track, all points inside each of the segments
 	for trackIndex := range gpxFile.Tracks {
-		gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile))
+		gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, nil))
 
 		for segIndex := range gpxFile.Tracks[trackIndex].Segments {
 			// initialize data buckets
@@ -171,7 +204,7 @@ func main() {
 					// a sun that is set
 					if sunElevation < 0 {
 						if currentSunState.hasChanged(SunDowned) {
-							gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
+							gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 						}
 						gpxOutput.AppendPoint(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex])
 						continue
@@ -199,17 +232,17 @@ func main() {
 					if (sunElevation > 0) && (sunElevation < 15) {
 						if (sunImpactAngle < 30) || (sunImpactAngle > 330) {
 							if currentSunState.hasChanged(SunBlinding) {
-								gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
+								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						} else {
 							if currentSunState.hasChanged(SunRising) {
-								gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
+								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						}
 						deepSunImpactDistribution[int(sunImpactAngle)]++
 					} else {
 						if currentSunState.hasChanged(SunUp) {
-							gpxOutput.AppendSegment(nextSegment(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
+							gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 						}
 					}
 					gpxOutput.AppendPoint(&gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex])
