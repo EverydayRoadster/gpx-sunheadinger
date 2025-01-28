@@ -49,7 +49,7 @@ type SunState int
 
 const (
 	SunDowned = iota
-	SunRising
+	SunLow
 	SunBlinding
 	SunUp
 	Unknown
@@ -65,8 +65,8 @@ func (sunState SunState) ToString() string {
 	switch sunState {
 	case SunDowned:
 		return "Sun Down"
-	case SunRising:
-		return "Sun Rising"
+	case SunLow:
+		return "Sun Low"
 	case SunBlinding:
 		return "Sun Blinding"
 	case SunUp:
@@ -227,19 +227,20 @@ func main() {
 
 					// collect a value into a stack per degree of sun impact to car direction
 					sunImpactDistribution[int(sunImpactAngle)]++
-					sunImpactDistributionTime[int(sunImpactAngle)] =
-						sunImpactDistributionTime[int(sunImpactAngle)] + gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
+
+					sunImpactDurationSeconds := gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
+					sunImpactDistributionTime[int(sunImpactAngle)] += sunImpactDurationSeconds
 					if (sunElevation > 0) && (sunElevation < 15) {
 						if (sunImpactAngle < 30) || (sunImpactAngle > 330) {
 							if currentSunState.hasChanged(SunBlinding) {
 								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						} else {
-							if currentSunState.hasChanged(SunRising) {
+							if currentSunState.hasChanged(SunLow) {
 								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						}
-						deepSunImpactDistribution[int(sunImpactAngle)]++
+						deepSunImpactDistribution[int(sunImpactAngle)] += sunImpactDurationSeconds
 					} else {
 						if currentSunState.hasChanged(SunUp) {
 							gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
@@ -273,7 +274,7 @@ func main() {
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
 			check(err)
 			csvSunImpactWriter := csv.NewWriter(csvSunImpact)
-			csvSunImpactWriter.Write([]string{"Impact Angle", "count", "normalized count", "timesum", "deep sun", "Q1 timed", "Q2 timed", "Q3 timed"})
+			csvSunImpactWriter.Write([]string{"Impact Angle", "count", "normalized count", "timesum sun", "timesum deep sun", "Q1 timed", "Q2 timed", "Q3 timed"})
 
 			// max, to normalize to 100 slices.Max()
 			maxSunImpactDistribution := slices.Max(sunImpactDistribution)
@@ -296,8 +297,7 @@ func main() {
 	xmlBytes, err := gpxOutput.ToXml(gpx.ToXmlParams{Version: "1.1", Indent: true})
 	check(err)
 	// write GPX XML output
-	filename = filename[0 : len(filename)-len(filepath.Ext(filename))]
-	err = os.WriteFile(filename+".output.gpx", xmlBytes, 0666)
+	err = os.WriteFile(filename+".sunstatus.gpx", xmlBytes, 0666)
 	check(err)
 
 }
