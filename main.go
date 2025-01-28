@@ -154,9 +154,12 @@ func main() {
 
 		for segIndex := range gpxFile.Tracks[trackIndex].Segments {
 			// initialize data buckets
-			sunImpactDistributionTime := make([]float64, 360)
+			// counts of instances, useful on even timespans only, offers direct normalization for easier comparism
 			sunImpactDistribution := make([]float64, 360)
-			deepSunImpactDistribution := make([]float64, 360)
+			// time of sun exposure per degree of impact to a car
+			sunImpactDistributionTime := make([]float64, 360)
+			// time of deep standing sun exposure per degree of impact to a car
+			deepSunImpactDistributionTime := make([]float64, 360)
 
 			// align filename with name from input file
 			filename = filename[0 : len(filename)-len(filepath.Ext(filename))]
@@ -201,7 +204,7 @@ func main() {
 					}
 
 					sunAzimuth, sunElevation := calculateSunPosition(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Latitude, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Longitude, gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp)
-					// a sun that is set
+					// a sun that is set, it makes it to the graph but not into the statistics
 					if sunElevation < 0 {
 						if currentSunState.hasChanged(SunDowned) {
 							gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
@@ -240,7 +243,7 @@ func main() {
 								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						}
-						deepSunImpactDistribution[int(sunImpactAngle)] += sunImpactDurationSeconds
+						deepSunImpactDistributionTime[int(sunImpactAngle)] += sunImpactDurationSeconds
 					} else {
 						if currentSunState.hasChanged(SunUp) {
 							gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
@@ -268,7 +271,9 @@ func main() {
 			check(err)
 			interQuartileRange, err := stats.InterQuartileRange(sunImpactDistributionTime)
 			check(err)
-			fmt.Println("Track: " + strconv.Itoa(trackIndex) + " Segment: " + strconv.Itoa(segIndex) + " Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64))
+			maxSunImpactTime, err := stats.Max(sunImpactDistributionTime)
+			check(err)
+			fmt.Println("Track: " + strconv.Itoa(trackIndex) + " Segment: " + strconv.Itoa(segIndex) + " Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64) + ", Peak factor: " + strconv.FormatFloat(maxSunImpactTime/interQuartileRange, 'f', 2, 64))
 
 			// write collected data stuff
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
@@ -284,7 +289,7 @@ func main() {
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex], 'f', 2, 64),
 					strconv.FormatFloat(sunImpactDistribution[carAngleIndex]*100/maxSunImpactDistribution, 'f', 2, 64),
 					strconv.FormatFloat(sunImpactDistributionTime[carAngleIndex], 'f', 2, 64),
-					strconv.FormatFloat(deepSunImpactDistribution[carAngleIndex], 'f', 2, 64),
+					strconv.FormatFloat(deepSunImpactDistributionTime[carAngleIndex], 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q1, 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q2, 'f', 2, 64),
 					strconv.FormatFloat(quartiles.Q3, 'f', 2, 64)})
