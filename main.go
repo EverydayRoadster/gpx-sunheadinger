@@ -160,6 +160,8 @@ func main() {
 			sunImpactDistributionTime := make([]float64, 360)
 			// time of deep standing sun exposure per degree of impact to a car
 			deepSunImpactDistributionTime := make([]float64, 360)
+			// time of blinding sun exposure per degree of impact to a car
+			blindingSunImpactDistributionTime := make([]float64, 360)
 
 			// align filename with name from input file
 			filename = filename[0 : len(filename)-len(filepath.Ext(filename))]
@@ -233,8 +235,13 @@ func main() {
 
 					sunImpactDurationSeconds := gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex].Timestamp.Sub(gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1].Timestamp).Seconds()
 					sunImpactDistributionTime[int(sunImpactAngle)] += sunImpactDurationSeconds
+
+					// deep sun is sun impact below 15° elevation
 					if (sunElevation > 0) && (sunElevation < 15) {
+						deepSunImpactDistributionTime[int(sunImpactAngle)] += sunImpactDurationSeconds
+						// blinding sun is deep sun and +-30° heading north
 						if (sunImpactAngle < 30) || (sunImpactAngle > 330) {
+							blindingSunImpactDistributionTime[int(sunImpactAngle)] += sunImpactDurationSeconds
 							if currentSunState.hasChanged(SunBlinding) {
 								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
@@ -243,7 +250,6 @@ func main() {
 								gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
 							}
 						}
-						deepSunImpactDistributionTime[int(sunImpactAngle)] += sunImpactDurationSeconds
 					} else {
 						if currentSunState.hasChanged(SunUp) {
 							gpxOutput.AppendTrack(nextTrack(trackIndex, gpxFile, &gpxFile.Tracks[trackIndex].Segments[segIndex].Points[pointIndex-1]))
@@ -273,7 +279,10 @@ func main() {
 			check(err)
 			maxSunImpactTime, err := stats.Max(sunImpactDistributionTime)
 			check(err)
-			fmt.Println("Track: " + strconv.Itoa(trackIndex) + " Segment: " + strconv.Itoa(segIndex) + " Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64) + ", Peak factor: " + strconv.FormatFloat(maxSunImpactTime/interQuartileRange, 'f', 2, 64))
+			sumSunBlinding, err := stats.Sum(blindingSunImpactDistributionTime)
+			check(err)
+
+			fmt.Println("Track: " + strconv.Itoa(trackIndex) + " Segment: " + strconv.Itoa(segIndex) + " Timed InterQuartileRange: " + strconv.FormatFloat(interQuartileRange, 'f', 0, 64) + ", Peak factor: " + strconv.FormatFloat(maxSunImpactTime/interQuartileRange, 'f', 2, 64) + ", blinding for " + strconv.FormatFloat(sumSunBlinding/60, 'f', 2, 64) + " minutes.")
 
 			// write collected data stuff
 			csvSunImpact, err := os.Create(filename + "_" + strconv.Itoa(trackIndex) + "_" + strconv.Itoa(segIndex) + ".sunimpact.csv")
